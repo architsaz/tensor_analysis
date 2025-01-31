@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include "febio_types.h"
 #include "common.h"
 
@@ -97,4 +98,20 @@ int readfebiolog(char *path,int mesh_nelem, double **st2, read_time logtime)
 
     *st2 = st;
     return e;
+}
+// find unidirectional or bidirectional stress region mask:
+void unibimask(int nelem, double *smax, double *smin,double threshold, int **sdir2)
+{
+    int *sdir = (int *)calloc((size_t)nelem, sizeof(int));
+    for (int ele = 0; ele < nelem; ele++)
+    {
+        if (fabs(smin[ele])<1) continue; // avoid unpressurized region
+        double ratio = fabs(smin[ele])/fabs(smax[ele]);
+        sdir[ele] = (ratio < 0.1 ) ? 3 : 4 ; // unidiretional : 3 bidirectional : 4
+        if (fabs(smax[ele]) <= threshold)
+        {
+            sdir[ele] = (sdir[ele] == 4) ? 2 : 1;
+        }
+    }
+    *sdir2 = sdir;
 }

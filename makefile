@@ -7,7 +7,7 @@ CC = gcc
  MYLIB_DIR = /dagon1/achitsaz/mylib/lib
  LIB_DIR = lib
 # LDFLAGS = -lm
-  LDFLAGS = -L$(MYLIB_DIR) -loperator -lmesh -lCGsolver -lCRSmat -lListDS -lm# -L$(LOC_LIB_DIR) -lListDS  # Linker flags to specify libraries
+  LDFLAGS = -L$(MYLIB_DIR) -lgnuplot -loperator -lmesh -lCGsolver -lCRSmat -lListDS -lm# -L$(LOC_LIB_DIR) -lListDS  # Linker flags to specify libraries
 
 # Directories
 SRC_DIR = src

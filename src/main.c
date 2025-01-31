@@ -16,6 +16,8 @@
 // febio
 #include "febiofunc.h"
 #include "febio_types.h"
+// ploting 
+#include "gnuplot.h"
 
 int main (void){
     int npoin, nelem, *elems;
@@ -308,6 +310,7 @@ int main (void){
         exit(EXIT_FAILURE);
     }
     // analysis tensor in tangential plane 
+    double *shear_st = (double *)malloc((size_t)nelem*4*sizeof(double));
     double *shear_evals_max = (double *)malloc((size_t)nelem*sizeof(double));
     double *shear_evals_min = (double *)malloc((size_t)nelem*sizeof(double));
     double *shear_evects_3D_min = (double *)malloc((size_t)nelem*3*sizeof(double));
@@ -338,6 +341,12 @@ int main (void){
         double tensor_2x2[2][2];
         extract_2x2_tensor(in_plane, t1, t2, tensor_2x2);
 
+        //save in-plane stress tensor
+        for (int i=0;i<2;i++) {
+            for (int j=0;j<2;j++)
+            shear_st[4*ele+i]=tensor_2x2[i][j];
+        }
+
         // Find eigenvalues
         double lambda1, lambda2;
         find_eigenvalues_2x2(tensor_2x2, &lambda1, &lambda2);
@@ -355,7 +364,7 @@ int main (void){
             v3D2[i] = t1[i] * v2D2[0] + t2[i] * v2D2[1];
 
         // save eigen values and reconstructed eigen vectors in 3D  
-        if (lambda1>lambda2){
+        if (fabs(lambda1)>fabs(lambda2)){
             shear_evals_max [ele] = lambda1;
             shear_evals_min [ele] = lambda2;
             for (int i=0;i<3;i++)
@@ -370,6 +379,29 @@ int main (void){
             for (int i=0;i<3;i++)
                 shear_evects_3D_min[3*ele+i]=v3D1[i];
         }    
+    }
+    // disturbution of eval_min/eval_max 
+    double *eval_ratio = (double *)malloc((size_t)nelem*sizeof(double));
+    for (int ele=0;ele<nelem;ele++){
+        eval_ratio[ele] = fabs(shear_evals_min[ele]/shear_evals_max[ele]);
+    }
+    // creat Histogram to show disturbution of eval_ratio
+        int num_values = nelem;  // Number of values to analyze
+        double max_value = 1;  // Maximum range value
+        int num_bins = 20 ;     // Number of bins
+        int *bins;
+
+        // calculate the disturbution in each bin
+        int max_bin_count=compute_disturbution_histogram(eval_ratio,num_values,&bins,num_bins,max_value);
+        // save histogeram
+        plot_histogram(bins,num_bins,max_value,num_values,"Eval_ratio.dat","Histogram of Eval min/max","ratio","frequency" ,"Eval_ratio_histogram.png","Evalratio",max_bin_count);
+        free(bins);
+    // find uni or bi-directional region
+    int *sdir;
+    unibimask(nelem,shear_evals_max,shear_evals_min,10000,&sdir);
+    if (sdir == NULL){
+        fprintf (stderr,"! there is problem in allocate memory for sdir.\n");
+        exit(EXIT_FAILURE);
     }
     // save in VTK format
     // coordinate 
@@ -411,6 +443,7 @@ int main (void){
         {
             {"BC_poisson", 1, nelem, cell_stat, SCA_int_VTK},
             {"poisson", 1, nelem, u, SCA_double_VTK},
+            {"uni/bi_region", 1, nelem, sdir, SCA_int_VTK},
             {"EValue_max", 1, nelem, shear_evals_max, SCA_double_VTK},
             {"EValue_min", 1, nelem, shear_evals_min, SCA_double_VTK},
             {"norm_grad_u", 3, nelem, norm_grad, VEC_double_VTK},
@@ -451,5 +484,8 @@ int main (void){
     free (shear_evals_min);
     free (shear_evects_3D_max);
     free (shear_evects_3D_min);
+    free (sdir);
+    free (eval_ratio);
+    free (shear_st);
     return 0; // success signal
 }
