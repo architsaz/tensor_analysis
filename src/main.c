@@ -461,7 +461,7 @@ int main (void){
         //save in-plane stress tensor
         for (int i=0;i<2;i++) {
             for (int j=0;j<2;j++)
-            shear_st[4*ele+i]=tensor_2x2[i][j];
+            shear_st[4*ele+2*i+j]=tensor_2x2[i][j];
         }
 
         // Find eigenvalues
@@ -497,7 +497,35 @@ int main (void){
                 shear_evects_3D_min[3*ele+i]=v3D1[i];
         }    
     }
-
+    // // print in-plane tensor
+    // int num_prt = 5;
+    // for (int ele =0;ele<nelem;ele++){
+    //     if (num_prt<0) break;
+    //     if (region_ele[ele]==16 ){
+    //         printf("in-plane stress ele : %d \n",ele);
+    //         for (int i=0;i<2;i++) {
+    //             for (int j=0;j<2;j++)
+    //                 printf("%lf ",shear_st[4*ele+2*i+j]);
+    //             printf("\n");
+    //         }
+    //         num_prt--;
+    //     }
+    // } 
+    // check the symmetricity of in-plan tensor 
+    int num_sys = 0;
+    int num_non_sys = 0;
+    for (int ele =0;ele<nelem;ele++){
+        if (region_ele[ele]==16 || region_ele[ele]==8 || region_ele[ele]==4){
+            if (shear_st[4*ele+1]-shear_st[4*ele+2]>1){
+                //fprintf(stderr,"! in-plan tensor of ele = %d (region: %d) is not symmetric.\n",ele,region_ele[ele]);
+                //exit(EXIT_FAILURE);
+                num_non_sys++;
+            }
+            num_sys++;
+        }
+    }
+    (num_non_sys==0) ? printf("* in-plane stress tensor is symmetric.\n") : printf("! nonsymetric : %d symetric: %d element.\n",num_non_sys,num_sys);
+    
     // disturbution of eval_min/eval_max 
     double *eval_ratio_aneu = (double *)malloc((size_t)nelem*sizeof(double));
     int num_aneu=0;
