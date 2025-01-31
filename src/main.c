@@ -1,6 +1,7 @@
 // mesh funcs and mesh types
 #include "mesh.h"
 #include "vector.h"
+#include "string.h"
 // CRS lib and CG solver
 #include "CRSMat_types.h"
 #include "CRSmatfuncs.h"
@@ -18,6 +19,114 @@
 #include "febio_types.h"
 // ploting 
 #include "gnuplot.h"
+
+// read region from a zfem file 
+int read_regionmask(char *path,int nelem, int npoin, int *elems, int **region_id2, int **region_idp2)
+{
+    int e = 0;
+
+    // Allocate memory for region_id
+    int *region_id = malloc((size_t)npoin * sizeof(*region_id));
+    if (region_id == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed for region_id.\n");
+        return -1;
+    }
+
+    // Open the file
+    FILE *fptr = fopen(path, "r");
+    if (fptr == NULL)
+    {
+        fprintf(stderr, "ERROR: Cannot open file - %s.\n", path);
+        free(region_id); // Free allocated memory before returning
+        return -1;
+    }
+
+    /* Read all lines of the file */
+    int buffer = 100;
+    char *str;
+    char line[buffer];
+    int endcount = 0;
+    int nscan, iline;
+    char test[20];
+
+    // Reading region labels
+    while (1)
+    {
+        str = edit_endline_character(line, buffer, fptr);
+        nscan = sscanf(str, "%s", test);
+
+        if (!strcmp(test, "regions"))
+        {
+            str = edit_endline_character(line, buffer, fptr);
+            nscan = sscanf(str, "%s", test);
+
+            if (!strcmp(test, "1"))
+            {
+                for (iline = 0; iline < npoin; iline++)
+                {
+                    str = edit_endline_character(line, buffer, fptr);
+                    nscan = sscanf(str, "%d", &region_id[iline]);
+
+                    // Error check
+                    if (nscan != 1)
+                    {
+                        fprintf(stderr, "ERROR: Incorrect data on line %d.\n", iline + 1);
+                        free(region_id);
+                        fclose(fptr);
+                        return -1;
+                    }
+                }
+                endcount += 1;
+            }
+        }
+
+        if (endcount == 1)
+        {
+            printf("* Done Reading region mask file!\n");
+            break;
+        }
+    }
+
+    // Close the file
+    if (fclose(fptr) == EOF)
+    {
+        printf("Error closing %s\n", path);
+        free(region_id);
+        return -1;
+    }
+
+    // Allocate memory for region_id_ele
+    int *region_id_ele = malloc((size_t)nelem * sizeof(*region_id_ele));
+    if (region_id_ele == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed for region_id_ele.\n");
+        free(region_id);
+        return -1;
+    }
+
+    // Fill region_id_ele based on region_id
+    //int points[3] = {0, 0, 0};
+    for (int ele = 0; ele < nelem; ele++)
+    {
+        // points[0] = elems[3 * ele];
+        // points[1] = elems[3 * ele + 1];
+        // points[2] = elems[3 * ele + 2];
+
+        // Assign region ID for the element based on one point (e.g., points[0] - 1)
+        region_id_ele[ele] = region_id[elems[3 * ele] - 1];
+        if (region_id_ele[ele]>16){
+            fprintf(stderr,"there is error in reading or calculating regions mask\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    /* Return results */
+    *region_id2 = region_id_ele;
+    *region_idp2 = region_id;
+
+    return e;
+}
 
 int main (void){
     int npoin, nelem, *elems;
@@ -49,6 +158,13 @@ int main (void){
         if (open[i]==0) opencount++;
     }
     (opencount==0) ? printf("! this is open mesh.\n") : printf("* this is close mesh.\n");
+    // read reginal mask 
+    int *region_ele,*region_p;
+    CHECK_ERROR(read_regionmask("temp/labels_srf.zfem",nelem,npoin,elems,&region_ele,&region_p));
+    if (region_ele == NULL || region_p==NULL){
+        fprintf(stderr,"! ERROR in allocation memory or reading read_regionmask.\n");
+        exit(EXIT_FAILURE);
+    }
     // calc norm of ele
     double *normele;
     CHECK_ERROR(save_normele(nelem,elems,ptxyz,&normele));
@@ -169,6 +285,7 @@ int main (void){
             {
                 {"open", 1, nelem, open, SCA_int_VTK},
                 {"BC", 1, nelem, cell_stat, SCA_int_VTK},
+                {"regions", 1, nelem, region_ele, SCA_int_VTK},
             };
         size_t countele = sizeof(prtelefield) / sizeof(prtelefield[0]);
         FunctionWithArgs prtpntfield[] = {
@@ -380,25 +497,30 @@ int main (void){
                 shear_evects_3D_min[3*ele+i]=v3D1[i];
         }    
     }
+
     // disturbution of eval_min/eval_max 
-    double *eval_ratio = (double *)malloc((size_t)nelem*sizeof(double));
+    double *eval_ratio_aneu = (double *)malloc((size_t)nelem*sizeof(double));
+    int num_aneu=0;
     for (int ele=0;ele<nelem;ele++){
-        eval_ratio[ele] = fabs(shear_evals_min[ele]/shear_evals_max[ele]);
+        if (region_ele[ele]==16 || region_ele[ele]==8 || region_ele[ele]==4){
+            eval_ratio_aneu[num_aneu] = fabs(shear_evals_min[ele]/shear_evals_max[ele]);
+            num_aneu++;
+        }  
     }
     // creat Histogram to show disturbution of eval_ratio
-        int num_values = nelem;  // Number of values to analyze
+        int num_values = num_aneu;  // Number of values to analyze
         double max_value = 1;  // Maximum range value
-        int num_bins = 20 ;     // Number of bins
+        int num_bins = 10 ;     // Number of bins
         int *bins;
 
         // calculate the disturbution in each bin
-        int max_bin_count=compute_disturbution_histogram(eval_ratio,num_values,&bins,num_bins,max_value);
+        int max_bin_count=compute_disturbution_histogram(eval_ratio_aneu,num_values,&bins,num_bins,max_value);
         // save histogeram
-        plot_histogram(bins,num_bins,max_value,num_values,"Eval_ratio.dat","Histogram of Eval min/max","ratio","frequency" ,"Eval_ratio_histogram.png","Evalratio",max_bin_count);
+        plot_histogram(bins,num_bins,max_value,num_values,"Eval_ratio.dat","Histogram of Eval ratio on aneurysm region","ratio","frequency" ,"Eval_ratio_histogram.png","min/max",max_bin_count);
         free(bins);
     // find uni or bi-directional region
     int *sdir;
-    unibimask(nelem,shear_evals_max,shear_evals_min,10000,&sdir);
+    unibimask(nelem,shear_evals_max,shear_evals_min,0.2,10000,&sdir);
     if (sdir == NULL){
         fprintf (stderr,"! there is problem in allocate memory for sdir.\n");
         exit(EXIT_FAILURE);
@@ -485,7 +607,9 @@ int main (void){
     free (shear_evects_3D_max);
     free (shear_evects_3D_min);
     free (sdir);
-    free (eval_ratio);
+    free (eval_ratio_aneu);
     free (shear_st);
+    free (region_ele);
+    free (region_p);
     return 0; // success signal
 }
