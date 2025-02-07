@@ -414,6 +414,16 @@ int main(void)
     end_time = clock();
     cpu_time_used = (double)(end_time - start_time) / CLOCKS_PER_SEC;
     printf("* CG Solver execution time : %.2f seconds\n", cpu_time_used);
+    // check the result
+    FunctionWithArgs prtelefield2[] =
+        {
+            {"BC_poisson", 1, nelem, cell_stat, SCA_int_VTK},
+            {"poisson", 1, nelem, u, SCA_double_VTK},
+        };
+    size_t countele2 = sizeof(prtelefield2) / sizeof(prtelefield2[0]);
+    FunctionWithArgs prtpntfield2[] = {0};
+    size_t countpnt2 = 0;
+    CHECK_ERROR(SaveVTK("./", "checkpoisson", 0, M1, tri3funcVTK, prtelefield2, countele2, prtpntfield2, countpnt2));
 #pragma endregion solve_Poisson
 #pragma region calc_local_basis
     // calculate the gradient scaler on each element
@@ -444,8 +454,8 @@ int main(void)
     for (int ele = 0; ele < nelem; ele++)
     {
         double thrid_vec[3];
-        double first_vec[3] = {norm_grad[3 * ele], norm_grad[3 * ele + 1], norm_grad[3 * ele + 2]};
-        double second_vec[3] = {normele[3 * ele], normele[3 * ele + 1], normele[3 * ele + 2]};
+        double first_vec[3] = {normele[3 * ele], normele[3 * ele + 1], normele[3 * ele + 2]};
+        double second_vec[3] = {norm_grad[3 * ele], norm_grad[3 * ele + 1], norm_grad[3 * ele + 2]};
         crossProduct(first_vec, second_vec, thrid_vec);
         local_coord[9 * ele] = first_vec[0];
         local_coord[9 * ele + 1] = first_vec[1];
@@ -457,6 +467,53 @@ int main(void)
         local_coord[9 * ele + 7] = thrid_vec[1];
         local_coord[9 * ele + 8] = thrid_vec[2];
     }
+    // save local system in VTK format
+    // coordinate
+    M1->numExtraPoints = 3 * nelem;
+    double *extra_ptxyz2 = calloc((size_t)M1->numExtraPoints * 3, sizeof(double));
+    // points for first vec
+    for (int i = 0; i < (nelem * 3); i++)
+        extra_ptxyz2[i] = cen[i];
+    // points for second vec
+    for (int i = 0; i < (nelem * 3); i++)
+        extra_ptxyz2[3 * nelem + i] = cen[i];
+    // points for third vec
+    for (int i = 0; i < (nelem * 3); i++)
+        extra_ptxyz2[6 * nelem + i] = cen[i];
+
+    M1->extra_ptxyz = extra_ptxyz2;
+
+    double *new_normele2 = calloc(((size_t)M1->npoin + (size_t)M1->numExtraPoints) * 3, sizeof(double));
+    // First vector of each element
+    for (int i = 0; i < nelem; i++)
+    {
+        for (int j = 0; j < 3; j++)
+            new_normele2[3 * M1->npoin + 3 * i + j] = local_coord[9 * i + j];
+    }
+    // Second vector
+    for (int i = 0; i < nelem; i++)
+    {
+        for (int j = 0; j < 3; j++)
+            new_normele2[3 * M1->npoin + 3 * nelem + 3 * i + j] = local_coord[9 * i + 3 + j];
+    }
+    // Third vector
+    for (int i = 0; i < nelem; i++)
+    {
+        for (int j = 0; j < 3; j++)
+            new_normele2[3 * M1->npoin + 6 * nelem + 3 * i + j] = local_coord[9 * i + 6 + j];
+    }
+    // save local sys in the VTK format
+    FunctionWithArgs prtelefield3[] =
+        {
+            {"norm_grad_u", 3, nelem, norm_grad, VEC_double_VTK},
+        };
+    size_t countele3 = sizeof(prtelefield3) / sizeof(prtelefield3[0]);
+    FunctionWithArgs prtpntfield3[] = {
+        {"local_normal_vec", 3, (M1->npoin + M1->numExtraPoints), new_normele2, VEC_double_VTK}};
+    size_t countpnt3 = 1;
+    CHECK_ERROR(SaveVTK("./", "checklocalsys", 0, M1, tri3funcVTK, prtelefield3, countele3, prtpntfield3, countpnt3));
+    free(extra_ptxyz2);
+    free(new_normele2);
 #pragma endregion local_basis
 
     // read stress tensor from log file
@@ -580,11 +637,14 @@ int main(void)
     }
     (num_non_sys == 0) ? printf("* in-plane stress tensor is symmetric.\n") : printf("! nonsymetric : %d symetric: %d element.\n", num_non_sys, num_sys);
 #pragma endregion extract_in - plane_tensor
+
     // disturbution of eval_min/eval_max
     double *eval_ratio_aneu = (double *)malloc((size_t)nelem * sizeof(double));
+    double *eval_ratio = (double *)malloc((size_t)nelem * sizeof(double));
     int num_aneu = 0;
     for (int ele = 0; ele < nelem; ele++)
     {
+        eval_ratio[ele] = (shear_evals_max[ele] > 1) ? fabs(shear_evals_min[ele] / shear_evals_max[ele]) : 0;
         if (region_ele[ele] == 16 || region_ele[ele] == 8 || region_ele[ele] == 4)
         {
             eval_ratio_aneu[num_aneu] = fabs(shear_evals_min[ele] / shear_evals_max[ele]);
@@ -594,11 +654,12 @@ int main(void)
     // creat Histogram to show disturbution of eval_ratio
     int num_values = num_aneu; // Number of values to analyze
     double max_value = 1;      // Maximum range value
+    double min_value = 0;      // Min range value
     int num_bins = 10;         // Number of bins
     int *bins;
 
     // calculate the disturbution in each bin
-    int max_bin_count = compute_disturbution_histogram(eval_ratio_aneu, num_values, &bins, num_bins, max_value);
+    int max_bin_count = compute_distribution_double(eval_ratio_aneu, num_values, &bins, num_bins, max_value, min_value);
     // save histogeram
     plot_histogram(bins, num_bins, max_value, num_values, "Eval_ratio.dat", "Histogram of Eval ratio on aneurysm region", "ratio", "frequency", "Eval_ratio_histogram.png", "min/max", max_bin_count);
     free(bins);
@@ -610,61 +671,205 @@ int main(void)
         fprintf(stderr, "! there is problem in allocate memory for sdir.\n");
         exit(EXIT_FAILURE);
     }
-#pragma region save_in_VTK_format
-    // coordinate
-    M1->numExtraPoints = 3 * nelem;
-    double *extra_ptxyz2 = calloc((size_t)M1->numExtraPoints * 3, sizeof(double));
-    // points for first vec
-    for (int i = 0; i < (nelem * 3); i++)
-        extra_ptxyz2[i] = cen[i];
-    // points for second vec
-    for (int i = 0; i < (nelem * 3); i++)
-        extra_ptxyz2[3 * nelem + i] = cen[i];
-    // points for third vec
-    for (int i = 0; i < (nelem * 3); i++)
-        extra_ptxyz2[6 * nelem + i] = cen[i];
+    // Calculate the Von Mises Stress
+    double *von_mises = (double *)malloc((size_t)nelem * sizeof(double));
+    for (int ele = 0; ele < nelem; ele++)
+        von_mises[ele] = sqrt(SQUARE(shear_evals_max[ele]) + SQUARE(shear_evals_min[ele]));
 
-    M1->extra_ptxyz = extra_ptxyz2;
+    // calculate mask according sign of eigen values
+    int *eigen_class = (int *)calloc((size_t)nelem, sizeof(int));
+    for (int ele = 0; ele < nelem; ele++)
+    {
 
-    double *new_normele2 = calloc(((size_t)M1->npoin + (size_t)M1->numExtraPoints) * 3, sizeof(double));
+        if (sdir[ele] == 2)
+        {
+            if (shear_evals_max[ele] > 0 && shear_evals_min[ele] > 0)
+                eigen_class[ele] = 1;
+            if (shear_evals_max[ele] > 0 && shear_evals_min[ele] < 0)
+                eigen_class[ele] = 2;
+            if (shear_evals_max[ele] < 0 && shear_evals_min[ele] > 0)
+                eigen_class[ele] = 3;
+            if (shear_evals_max[ele] < 0 && shear_evals_min[ele] < 0)
+                eigen_class[ele] = 4;
+        }
+        if (sdir[ele] == 1)
+        {
+            if (shear_evals_max[ele] > 0)
+                eigen_class[ele] = 5;
+            if (shear_evals_max[ele] < 0)
+                eigen_class[ele] = 6;
+        }
+    }
+    // find disturbution in each class just for aneurysm
+    int *eigen_class_disturb = (int *)calloc((size_t)nelem, sizeof(int));
+    num_aneu = 0;
+    for (int ele = 0; ele < nelem; ele++)
+    {
+        if (region_ele[ele] == 16 || region_ele[ele] == 8 || region_ele[ele] == 4)
+        {
+            eigen_class_disturb[num_aneu] = eigen_class[ele];
+            num_aneu++;
+        }
+    }
+
+    // creat Histogram to show disturbution of eval_ratio
+    int num_values2 = num_aneu; // Number of values to analyze
+    int max_value2 = 6;         // Maximum range value
+    int min_value2 = 1;         // Min range value
+    int num_bins2 = 6;          // Number of bins
+    int *bins2;
+
+    // calculate the disturbution in each bin
+    int max_bin_count2 = compute_distribution_int(eigen_class_disturb, num_values2, &bins2, num_bins2, max_value2, min_value2);
+    // save histogeram
+    plot_histogram(bins2, num_bins2, max_value2, num_values2, "eigen_class_disturb.dat", "Histogram of eigen class on aneurysm region", "classes", "frequency", "Eigen_classes_histogram.png", "classes", max_bin_count2);
+    free(bins2);
+
+    // calculate the rotation angle for max principal stress 
+    double *rotation_max_t1 = (double *)calloc ((size_t)nelem,sizeof(double));
+    if (!rotation_max_t1){
+        fprintf(stderr,"! Failure in Memory Allication rotation_max_t1 .\n");
+        exit(EXIT_FAILURE);
+    }
+    for (int ele =0;ele<nelem;ele++){
+        if (shear_evals_max[ele] < 1) continue;
+        double evec_c[3] = {shear_evects_3D_max[3 * ele], shear_evects_3D_max[3 * ele + 1], shear_evects_3D_max[3 * ele + 2]};
+        double t1[3]={local_coord[9*ele+3],local_coord[9*ele+4],local_coord[9*ele+5]};
+        double dot_product = evec_c[0] * t1[0] + evec_c[1] * t1[1] + evec_c[2] * t1[2];
+        double degree = acos(fabs(dot_product)) * 180.0 / PI;
+        // double degree_min = 90;
+        // if (degree > 45)
+        // {
+        //     double cen_landa_min = shear_evals_min[ele];
+        //     double cen_landa_max = shear_evals_max[ele];
+        //     double ratio = cen_landa_min / cen_landa_max;
+        //     if (ratio > 0.1)
+        //     {
+        //         double evec_c_min[3] = {shear_evects_3D_min[3 * ele], shear_evects_3D_min[3 * ele + 1], shear_evects_3D_min[3 * ele + 2]};
+        //         double dot_product_min = evec_c_min[0] * t1[0] + evec_c_min[1] * t1[1] + evec_c_min[2] * t1[2];
+        //         degree_min = acos(fabs(dot_product_min)) * 180.0 / PI;
+        //     }
+        // }
+        // degree = MIN(degree, degree_min);
+        rotation_max_t1[ele]= MAX(degree, rotation_max_t1[ele]);
+    }
+    // calculate relative angels of eigen vectors
+    double *evec_max_angles = (double *)calloc((size_t)nelem * 3, sizeof(double));
+    if (!evec_max_angles)
+    {
+        fprintf(stderr, "! Failure in Memory Allocation evec_max_angles.\n");
+        exit(EXIT_FAILURE);
+    }
+    for (int ele = 0; ele < nelem; ele++)
+    {
+        double evec_c[3] = {shear_evects_3D_max[3 * ele], shear_evects_3D_max[3 * ele + 1], shear_evects_3D_max[3 * ele + 2]};
+        if (shear_evals_max[ele] < 1)
+            continue;
+        for (int nei = 0; nei < 3; nei++)
+        {
+            int ele_nei = esure[3 * ele + nei];
+            double evec_nei[3] = {shear_evects_3D_max[3 * ele_nei], shear_evects_3D_max[3 * ele_nei + 1], shear_evects_3D_max[3 * ele_nei + 2]};
+            double dot_product = evec_c[0] * evec_nei[0] + evec_c[1] * evec_nei[1] + evec_c[2] * evec_nei[2];
+            double degree = acos(fabs(dot_product)) * 180.0 / PI;
+            double degree_min = 90;
+            if (degree > 45)
+            {
+                double nei_landa_min = shear_evals_min[ele_nei];
+                double cen_landa_max = shear_evals_max[ele];
+                double ratio = nei_landa_min / cen_landa_max;
+                if (ratio > 0.5)
+                {
+                    double evec_nei_min[3] = {shear_evects_3D_min[3 * ele_nei], shear_evects_3D_min[3 * ele_nei + 1], shear_evects_3D_min[3 * ele_nei + 2]};
+                    double dot_product_min = evec_c[0] * evec_nei_min[0] + evec_c[1] * evec_nei_min[1] + evec_c[2] * evec_nei_min[2];
+                    degree_min = acos(fabs(dot_product_min)) * 180.0 / PI;
+                }
+            }
+            degree = MIN(degree, degree_min);
+            evec_max_angles[ele] = MAX(degree, evec_max_angles[ele]);
+        }
+    }
+    // save tensor analysis in VTK format
+    M1->numExtraPoints = (4) * nelem;
+    double *extra_ptxyz3 = calloc((size_t)M1->numExtraPoints * 3, sizeof(double));
+    // points for first eigvec
+    for (int i = 0; i < (nelem * 3); i++)
+        extra_ptxyz3[i] = cen[i];
+    // points for second eigvec
+    for (int i = 0; i < (nelem * 3); i++)
+        extra_ptxyz3[3 * nelem + i] = cen[i];
+    // points for first orivec
+    for (int i = 0; i < (nelem * 3); i++)
+        extra_ptxyz3[2 * 3 * nelem + i] = cen[i];
+    // points for second orivec
+    for (int i = 0; i < (nelem * 3); i++)
+        extra_ptxyz3[3 * 3 * nelem + i] = cen[i];
+
+    M1->extra_ptxyz = extra_ptxyz3;
+
+    double *new_normele3 = calloc(((size_t)M1->npoin + (size_t)M1->numExtraPoints) * 3, sizeof(double));
     // First vector of each element
     for (int i = 0; i < nelem; i++)
     {
         for (int j = 0; j < 3; j++)
-            new_normele2[3 * M1->npoin + 3 * i + j] = local_coord[9 * i + j];
+            new_normele3[3 * M1->npoin + 3 * i + j] = shear_evals_max[i] * shear_evects_3D_max[3 * i + j];
     }
     // Second vector
     for (int i = 0; i < nelem; i++)
     {
         for (int j = 0; j < 3; j++)
-            new_normele2[3 * M1->npoin + 3 * nelem + 3 * i + j] = local_coord[9 * i + 3 + j];
-    }
-    // Third vector
-    for (int i = 0; i < nelem; i++)
-    {
-        for (int j = 0; j < 3; j++)
-            new_normele2[3 * M1->npoin + 6 * nelem + 3 * i + j] = local_coord[9 * i + 6 + j];
+            new_normele3[3 * M1->npoin + 3 * nelem + 3 * i + j] = shear_evals_min[i] * shear_evects_3D_min[3 * i + j];
     }
 
-    FunctionWithArgs prtelefield2[] =
+    double *ori = calloc(((size_t)M1->npoin + (size_t)M1->numExtraPoints) * 3, sizeof(double));
+    double *ori_sign = calloc((size_t)M1->npoin + (size_t)M1->numExtraPoints, sizeof(double));
+    // First vector
+    for (int i = 0; i < nelem; i++)
+    {
+        ori_sign [M1->npoin + i] = (shear_evals_max[i]>0) ? 1 : -1 ;
+        for (int j = 0; j < 3; j++)
+            ori[3 * M1->npoin + 3 * i + j] = shear_evals_max[i] * shear_evects_3D_max[3 * i + j];
+    }
+    // Second vector
+    for (int i = 0; i < nelem; i++)
+    {
+        ori_sign [M1->npoin + nelem + i] = (shear_evals_min[i]>0) ? 1 : -1 ;
+        for (int j = 0; j < 3; j++)
+            ori[3 * M1->npoin + 3 * nelem + 3 * i + j] = shear_evals_min[i] * shear_evects_3D_min[3 * i + j];
+    }
+    // Reversed first vector
+    for (int i = 0; i < nelem; i++)
+    {
+        ori_sign [M1->npoin + 2 * nelem + i] = (shear_evals_max[i]>0) ? 1 : -1 ;
+        for (int j = 0; j < 3; j++)
+            ori[3 * M1->npoin + 6 * nelem + 3 * i + j] = -1 * shear_evals_max[i] * shear_evects_3D_max[3 * i + j];
+    }
+    // Reversed second vector
+    for (int i = 0; i < nelem; i++)
+    {
+        ori_sign [M1->npoin + 3 * nelem + i] = (shear_evals_min[i]>0) ? 1 : -1 ;
+        for (int j = 0; j < 3; j++)
+            ori[3 * M1->npoin + 9 * nelem + 3 * i + j] = -1 * shear_evals_min[i] * shear_evects_3D_min[3 * i + j];
+    }
+
+    FunctionWithArgs prtelefield4[] =
         {
-            {"BC_poisson", 1, nelem, cell_stat, SCA_int_VTK},
-            {"poisson", 1, nelem, u, SCA_double_VTK},
             {"uni/bi_region", 1, nelem, sdir, SCA_int_VTK},
+            {"eigen_class", 1, nelem, eigen_class, SCA_int_VTK},
             {"EValue_max", 1, nelem, shear_evals_max, SCA_double_VTK},
-            {"EValue_min", 1, nelem, shear_evals_min, SCA_double_VTK},
-            {"norm_grad_u", 3, nelem, norm_grad, VEC_double_VTK},
-            {"Evect_max", 3, nelem, shear_evects_3D_max, VEC_double_VTK},
-            {"Evect_min", 3, nelem, shear_evects_3D_min, VEC_double_VTK},
-        };
-    size_t countele2 = sizeof(prtelefield2) / sizeof(prtelefield2[0]);
-    FunctionWithArgs prtpntfield2[] = {
-        {"local_normal_vec", 3, (M1->npoin + M1->numExtraPoints), new_normele2, VEC_double_VTK}};
-    size_t countpnt2 = 1;
-    CHECK_ERROR(SaveVTK("./", "checkmesh", 1, M1, tri3funcVTK, prtelefield2, countele2, prtpntfield2, countpnt2));
-    free(extra_ptxyz2);
-    free(new_normele2);
-#pragma endregion save_in_VTK_format
+            {"Shear_Von_Mises_Stress", 1, nelem, von_mises, SCA_double_VTK},
+            {"Eval_ratio", 1, nelem, eval_ratio, SCA_double_VTK},
+            {"evec_max_angles", 1, nelem, evec_max_angles, SCA_double_VTK},
+            {"rotation_max_t1", 1, nelem, rotation_max_t1, SCA_double_VTK}};            
+    size_t countele4 = sizeof(prtelefield4) / sizeof(prtelefield4[0]);
+    FunctionWithArgs prtpntfield4[] = {
+        {"ori_sign", 1, (M1->npoin + M1->numExtraPoints), ori_sign, SCA_double_VTK},
+        {"eval_dot_evec", 3, (M1->npoin + M1->numExtraPoints), new_normele3, VEC_double_VTK},
+        {"ori", 3, (M1->npoin + M1->numExtraPoints), ori, VEC_double_VTK}};
+    size_t countpnt4 = 3;
+    CHECK_ERROR(SaveVTK("./", "tensor_analysis", 0, M1, tri3funcVTK, prtelefield4, countele4, prtpntfield4, countpnt4));
+    free(extra_ptxyz3);
+    free(new_normele3);
+#pragma region free_dynamics_alloc
     // free dynamics arraies
     free(elems);
     free(ptxyz);
@@ -691,9 +896,18 @@ int main(void)
     free(shear_evects_3D_max);
     free(shear_evects_3D_min);
     free(sdir);
+    free(eval_ratio);
     free(eval_ratio_aneu);
     free(shear_st);
     free(region_ele);
     free(region_p);
+    free(von_mises);
+    free(eigen_class);
+    free(eigen_class_disturb);
+    free(evec_max_angles);
+    free(ori);
+    free(ori_sign);
+    free(rotation_max_t1);
+#pragma endregion free_dynamics_alloc
     return 0; // success signal
 }

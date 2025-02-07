@@ -5,7 +5,7 @@
 #include "common.h"
 
 // read stress tensor in the log file of febio
-int readfebiolog(char *path,int mesh_nelem, double **st2, read_time logtime)
+int readfebiolog(char *path, int mesh_nelem, double **st2, read_time logtime)
 {
 
     int e = 0;
@@ -62,7 +62,7 @@ int readfebiolog(char *path,int mesh_nelem, double **st2, read_time logtime)
         {
             if (time_value == logtime_value)
             {
-                printf("* start to read stress tensor at time: %lf\n",time_value);
+                printf("* start to read stress tensor at time: %lf\n", time_value);
                 find_time++;
                 fgets(str, 256, fptr);
                 for (int ele = 0; ele < nelem; ele++)
@@ -84,7 +84,8 @@ int readfebiolog(char *path,int mesh_nelem, double **st2, read_time logtime)
             }
         }
     }
-    if (find_time == 0){
+    if (find_time == 0)
+    {
         fprintf(stderr, "ERROR: can not find time %lf in the log file!\n", max_time);
         exit(EXIT_FAILURE);
     }
@@ -100,17 +101,19 @@ int readfebiolog(char *path,int mesh_nelem, double **st2, read_time logtime)
     return e;
 }
 // find unidirectional or bidirectional stress region mask:
-void unibimask(int nelem, double *smax, double *smin,double critical_ratio,double threshold, int **sdir2)
+void unibimask(int nelem, double *smax, double *smin, double critical_ratio, double threshold, int **sdir2)
 {
     int *sdir = (int *)calloc((size_t)nelem, sizeof(int));
     for (int ele = 0; ele < nelem; ele++)
     {
-        if (fabs(smin[ele])<1) continue; // avoid unpressurized region
-        double ratio = fabs(smin[ele])/fabs(smax[ele]);
-        sdir[ele] = (ratio < critical_ratio) ? 3 : 4 ; // unidiretional : 3 bidirectional : 4
+        if (fabs(smin[ele]) < 1)
+            continue; // avoid unpressurized region
+        double ratio = fabs(smin[ele]) / fabs(smax[ele]);
+        sdir[ele] = (ratio < critical_ratio) ? 1 : 2; // unidiretional : 1 bidirectional : 2
         if (fabs(smax[ele]) <= threshold)
         {
-            sdir[ele] = (sdir[ele] == 4) ? 2 : 1;
+            // sdir[ele] = (sdir[ele] == 4) ? 2 : 1;
+            sdir[ele] = 0;
         }
     }
     *sdir2 = sdir;
