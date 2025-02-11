@@ -134,7 +134,7 @@ int main(void)
 #pragma region mesh_and_data_structures
     int npoin, nelem, *elems;
     double *ptxyz;
-    char path[] = {"temp/a06161.1.flds.zfem"};
+    char path[] = {"data/a06161.1.flds.zfem"};
     CHECK_ERROR(read_zfem(path, &npoin, &nelem, &ptxyz, &elems));
     if (ptxyz == NULL || elems == NULL)
     {
@@ -193,7 +193,7 @@ int main(void)
 #pragma region required_mask
     // read reginal mask
     int *region_ele, *region_p;
-    CHECK_ERROR(read_regionmask("temp/labels_srf.zfem", nelem, npoin, elems, &region_ele, &region_p));
+    CHECK_ERROR(read_regionmask("data/labels_srf.zfem", nelem, npoin, elems, &region_ele, &region_p));
     if (region_ele == NULL || region_p == NULL)
     {
         fprintf(stderr, "! ERROR in allocation memory or reading read_regionmask.\n");
@@ -201,28 +201,35 @@ int main(void)
     }
 
     // find a boundary condition
-    int *cell_stat = (int *)calloc((size_t)nelem, sizeof(int));
-    char bcpath[] = {"/dagon1/achitsaz/poisson/temp/a06161.1.flds.zfem.labels"};
-    FILE *fptr = fopen(bcpath, "r");
-    if (fptr == NULL)
-    {
-        fprintf(stderr, "BC file does not open properly\n");
-        return 1;
-    }
-    int buffer = 50, nscan;
-    char line[buffer];
-    char *str;
-    for (int ele = 0; ele < nelem; ele++)
-    {
-        str = edit_endline_character(line, buffer, fptr);
-        nscan = sscanf(str, "%d", &cell_stat[ele]);
-        if (nscan != 1)
-        {
-            fprintf(stderr, "! there is error in the line %d of BC file.\n", ele + 1);
-            return 1;
-        }
-    }
-    fclose(fptr);
+    int *cell_stat;
+    void *field1;
+    FunctionWithArgs2 prtreadfield[] = {
+        {"bc_mask", 1, nelem, &field1, read_VTK_int},
+    };
+    int countfield = sizeof(prtreadfield) / sizeof(prtreadfield[0]);
+    CHECK_ERROR(ReadVTK("data/", "a06161.1.BC", 0, prtreadfield, countfield));
+    cell_stat = (int *)field1;
+    // char bcpath[] = {"/dagon1/achitsaz/poisson/temp/a06161.1.flds.zfem.labels"};
+    // FILE *fptr = fopen(bcpath, "r");
+    // if (fptr == NULL)
+    // {
+    //     fprintf(stderr, "BC file does not open properly\n");
+    //     return 1;
+    // }
+    // int buffer = 50, nscan;
+    // char line[buffer];
+    // char *str;
+    // for (int ele = 0; ele < nelem; ele++)
+    // {
+    //     str = edit_endline_character(line, buffer, fptr);
+    //     nscan = sscanf(str, "%d", &cell_stat[ele]);
+    //     if (nscan != 1)
+    //     {
+    //         fprintf(stderr, "! there is error in the line %d of BC file.\n", ele + 1);
+    //         return 1;
+    //     }
+    // }
+    // fclose(fptr);
 #pragma endregion required_mask
     // creat mesh struct
     mesh *M1 = (mesh *)malloc(sizeof(mesh));
@@ -518,7 +525,7 @@ int main(void)
 
     // read stress tensor from log file
     double *st;
-    readfebiolog("temp/pres_0.log", nelem, &st, end_first_step);
+    readfebiolog("data/pres_0.log", nelem, &st, end_first_step);
     if (st == NULL)
     {
         fprintf(stderr, "there is problem in reading stress tensor\n");
