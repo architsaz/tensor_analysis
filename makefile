@@ -1,13 +1,13 @@
 # Compiler and flags
 CC = gcc
- CFLAGS = -Wall -Wextra -Wshadow -Wconversion -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -g -fsanitize=address -DDEBUG -Iinclude  -I/dagon1/achitsaz/mylib/include
+# CFLAGS = -Wall -Wextra -Wshadow -Wconversion -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -g -fsanitize=address -DDEBUG -Iinclude  -I/dagon1/achitsaz/mylib/include
 # CFLAGS = -Wall -Wextra -Wshadow -Wconversion -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L  -g -fsanitize=address -Iinclude
 # CFLAGS = -pg -Iinclude # the run program to generate the gmon.out and open it with command gprof program gmon.out > report.txt
-# CFLAGS = -O3 -march=native -ftree-vectorize -fopt-info-vec -Wall -Wextra -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Iinclude -I/dagon1/achitsaz/mylib/include
+ CFLAGS = -O3 -march=native -ftree-vectorize -fopt-info-vec -Wall -Wextra -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Iinclude -I/dagon1/achitsaz/mylib/include
  MYLIB_DIR = /dagon1/achitsaz/mylib/lib
  LIB_DIR = lib
 # LDFLAGS = -lm
-  LDFLAGS = -L$(MYLIB_DIR) -lgnuplot -loperator -lmesh -lCGsolver -lCRSmat -lListDS -lm# -L$(LOC_LIB_DIR) -lListDS  # Linker flags to specify libraries
+  LDFLAGS = -L$(MYLIB_DIR) -lvector -lgnuplot -loperator -lmesh -lCGsolver -lCRSmat -lListDS -lm# -L$(LOC_LIB_DIR) -lListDS  # Linker flags to specify libraries
 
 # Directories
 SRC_DIR = src
